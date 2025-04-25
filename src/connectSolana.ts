@@ -4,9 +4,12 @@ import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { getSolanaConnection, loadKeypair, activeConfig } from "./config";
 
-// Define the known Devnet USDC mint address
+// Define known USDC mint addresses
 const USDC_MINT_ADDRESS_DEVNET = new PublicKey(
   "Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr"
+);
+const USDC_MINT_ADDRESS_MAINNET = new PublicKey(
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 );
 const USDC_DECIMALS = 6; // USDC typically has 6 decimal places
 
@@ -44,51 +47,60 @@ async function checkBalances() {
       );
     }
 
-    // --- Check USDC Balance ---
-    if (activeConfig.driftEnv === "devnet") {
-      console.log("\n   Fetching Devnet USDC balance...");
-      try {
-        // Find the Associated Token Account (ATA) for this wallet and the USDC mint
-        const usdcAtaAddress = getAssociatedTokenAddressSync(
-          USDC_MINT_ADDRESS_DEVNET, // Mint address
-          walletAddress // Wallet address (owner)
-        );
-        console.log(`   Derived USDC ATA: ${usdcAtaAddress.toBase58()}`);
+    // --- Check USDC Balance (Works for Devnet or Mainnet) ---
+    console.log("\n   Fetching USDC balance...");
+    try {
+      // Select the correct USDC mint address based on the environment
+      const usdcMintAddress =
+        activeConfig.driftEnv === "mainnet-beta"
+          ? USDC_MINT_ADDRESS_MAINNET
+          : USDC_MINT_ADDRESS_DEVNET;
+      console.log(
+        `   Using USDC Mint: ${usdcMintAddress.toBase58()} (${
+          activeConfig.driftEnv
+        })`
+      );
 
-        // Get the balance of the ATA
-        // Use 'confirmed' commitment for token balances to avoid issues with temporary accounts
-        const usdcAtaInfo = await connection.getTokenAccountBalance(
-          usdcAtaAddress,
-          "confirmed"
-        );
+      // Find the Associated Token Account (ATA) for this wallet and the selected USDC mint
+      const usdcAtaAddress = getAssociatedTokenAddressSync(
+        usdcMintAddress, // Use the selected mint address
+        walletAddress
+      );
+      console.log(`   Derived USDC ATA: ${usdcAtaAddress.toBase58()}`);
 
-        if (usdcAtaInfo.value.uiAmount !== null) {
-          console.log(
-            `   ✅ Devnet USDC Balance: ${usdcAtaInfo.value.uiAmount.toFixed(
-              USDC_DECIMALS
-            )} USDC`
-          );
-        } else {
-          // This usually means the ATA exists but has 0 balance
-          console.log(`   ✅ Devnet USDC Balance: 0.000000 USDC`);
-        }
-      } catch (error) {
-        // If getTokenAccountBalance throws an error, it usually means the ATA doesn't exist yet
-        // (which implies a balance of 0)
+      // Get the balance of the ATA
+      const usdcAtaInfo = await connection.getTokenAccountBalance(
+        usdcAtaAddress,
+        "confirmed"
+      );
+
+      if (usdcAtaInfo.value.uiAmount !== null) {
         console.log(
-          `   🟡 Devnet USDC ATA not found or error fetching balance. Assuming 0 USDC.`
+          `   ✅ USDC Balance: ${usdcAtaInfo.value.uiAmount.toFixed(
+            USDC_DECIMALS
+          )} USDC`
         );
+      } else {
+        console.log(`   ✅ USDC Balance: 0.000000 USDC`);
+      }
+    } catch (error) {
+      // If getTokenAccountBalance throws an error, it usually means the ATA doesn't exist yet
+      console.log(
+        `   🟡 USDC ATA not found or error fetching balance. Assuming 0 USDC.`
+      );
+      console.log(
+        `      (Error: ${
+          error instanceof Error ? error.message : String(error)
+        })`
+      );
+      // Add hint specific to the environment
+      if (activeConfig.driftEnv === "devnet") {
+        console.log(`   Hint: You may need to use a Devnet faucet first.`);
+      } else {
         console.log(
-          `      (Error: ${
-            error instanceof Error ? error.message : String(error)
-          })`
-        );
-        console.log(
-          `   Hint: You may need to receive a USDC deposit first for the account to be created.`
+          `   Hint: You may need to receive USDC first for the account to be created.`
         );
       }
-    } else {
-      console.log("\n   Skipping USDC balance check (not on Devnet).");
     }
 
     console.log("\n✅ Balance checks complete!");
