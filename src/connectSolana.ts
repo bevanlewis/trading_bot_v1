@@ -1,3 +1,6 @@
+//* This files is used to check the connection to the Solana blockchain and fetch
+//* SOL and USDC balances of the wallet.
+
 // src/connectSolana.ts
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 // Import function to get the address of the associated token account

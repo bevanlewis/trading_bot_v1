@@ -1,3 +1,5 @@
+//* This file is used to export the private key so that it can be used by common wallets.
+
 // src/exportPrivateKey.ts
 import { Keypair } from "@solana/web3.js";
 import bs58 from "bs58";

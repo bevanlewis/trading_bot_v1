@@ -113,6 +113,14 @@ const configs: Record<Environment, EnvironmentConfig> = {
   },
 };
 
+// --- Expected Public Key ---
+
+// Load the expected public key from environment variable
+export const expectedPublicKey: string | undefined =
+  process.env.EXPECTED_PUBLIC_KEY;
+
+// --- Active Configuration & Connection Helper ---
+
 // Export the configuration for the current environment
 export const activeConfig: EnvironmentConfig = configs[currentEnv];
 

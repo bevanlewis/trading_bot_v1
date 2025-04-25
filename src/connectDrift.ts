@@ -1,3 +1,5 @@
+//* This is the main file for connecting to Drift and testing the connection.
+
 // src/connectDrift.ts
 import {
   DriftClient,
