@@ -10,8 +10,9 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@drift-labs/sdk": "^2.38.0",
-    "@solana/web3.js": "^1.98.2",
+    "@drift-labs/sdk": "^2.120.0-beta.1",
+    "@solana/web3.js": "^1.91.8",
+    "rpc-websockets": "7.11.0",
     "bs58": "^6.0.0",
     "dotenv": "^16.5.0"
   },
