@@ -5,7 +5,7 @@ import { Keypair } from "@solana/web3.js";
 import {
   loadKeypair,
   expectedPublicKey as expectedPublicKeyFromEnv,
-} from "./config"; // Assuming config.ts is in the same directory
+} from "../config"; // Updated import path
 
 console.log("Attempting to load keypair using configuration from .env...");
 

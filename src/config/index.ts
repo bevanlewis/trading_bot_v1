@@ -1,3 +1,5 @@
+//* This file is used to load the environment variables and the keypair.
+
 // src/config.ts
 import { Commitment, Connection, Keypair } from "@solana/web3.js";
 import { DriftEnv } from "@drift-labs/sdk";
@@ -28,7 +30,7 @@ export function loadKeypair(): Keypair {
   }
 
   // Construct the full path relative to the project root
-  const keypairPath = path.resolve(__dirname, "..", keypairPathEnv);
+  const keypairPath = path.resolve(__dirname, "../..", keypairPathEnv);
   console.log(
     `Attempting to load keypair from path specified in .env: ${keypairPath}`
   );

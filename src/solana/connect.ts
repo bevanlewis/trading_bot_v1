@@ -1,11 +1,11 @@
 //* This files is used to check the connection to the Solana blockchain and fetch
 //* SOL and USDC balances of the wallet.
 
-// src/connectSolana.ts
+// src/solana/connect.ts
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 // Import function to get the address of the associated token account
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { getSolanaConnection, loadKeypair, activeConfig } from "./config";
+import { getSolanaConnection, loadKeypair, activeConfig } from "../config";
 
 // Define known USDC mint addresses
 const USDC_MINT_ADDRESS_DEVNET = new PublicKey(

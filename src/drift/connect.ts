@@ -1,6 +1,6 @@
 //* This is the main file for connecting to Drift and testing the connection.
 
-// src/connectDrift.ts
+// src/drift/connect.ts
 import {
   DriftClient,
   Wallet,
@@ -8,7 +8,7 @@ import {
   BulkAccountLoader,
 } from "@drift-labs/sdk";
 import { Keypair } from "@solana/web3.js";
-import { getSolanaConnection, loadKeypair, activeConfig } from "./config";
+import { getSolanaConnection, loadKeypair, activeConfig } from "../config";
 
 // Main async function to connect to Drift and test
 async function checkDriftConnection() {

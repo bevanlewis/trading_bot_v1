@@ -1,10 +1,10 @@
 //* This file is used to export the private key so that it can be used by common wallets.
 
-// src/exportPrivateKey.ts
+// src/utils/exportPrivateKey.ts
 import { Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
 // Import the function that handles loading the keypair using .env
-import { loadKeypair } from "./config"; // Make sure dotenv.config() is called inside config.ts
+import { loadKeypair } from "../config"; // Make sure dotenv.config() is called inside config.ts
 
 console.log("Attempting to load keypair using configuration from .env...");
 
