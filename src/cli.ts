@@ -15,9 +15,12 @@ import { testDriftConnection } from "./drift/connect";
 import { fetchSingleMarketInfo, fetchAccountAndPositions } from "./drift/data";
 import { runKeypairValidation } from "./utils/validateKeypair"; // Util doesn't need drift client
 
-// Placeholder functions for actions still needing implementation
-const startBot = async () => console.log("\n Bot starting... (Placeholder)\n");
-const stopBot = async () => console.log("\n Bot stopping... (Placeholder)\n");
+// Import loop control functions
+import {
+  startTradingLoop,
+  stopTradingLoop,
+  isLoopRunning,
+} from "./strategy/core";
 
 // --- Main Menu Function ---
 async function showMainMenu() {
@@ -93,10 +96,33 @@ async function runCli() {
     try {
       switch (choice) {
         case "start":
-          await startBot();
+          if (isLoopRunning()) {
+            console.log("\nBot is already running.");
+          } else {
+            // Ask user for market index to trade
+            const marketIndexInput = await input({
+              message:
+                "Enter Perp Market Index to trade (e.g., 0 for SOL-PERP):",
+              default: "0",
+              validate: (value) => {
+                const num = parseInt(value, 10);
+                return !isNaN(num) && num >= 0
+                  ? true
+                  : "Please enter a non-negative number.";
+              },
+            });
+            const marketIndex = parseInt(marketIndexInput, 10);
+            console.log("\n--- Starting Bot ---");
+            startTradingLoop(driftClient, marketIndex); // Pass client and market index
+          }
           break;
         case "stop":
-          await stopBot();
+          if (!isLoopRunning()) {
+            console.log("\nBot is not running.");
+          } else {
+            console.log("\n--- Stopping Bot ---");
+            stopTradingLoop();
+          }
           break;
         case "testSolana":
           console.log("\n--- Running Solana Connection Test ---");
@@ -146,6 +172,11 @@ async function runCli() {
           console.log("\n--------------------------------------------------");
           break;
         case "exit":
+          // Ensure bot loop is stopped before exiting
+          if (isLoopRunning()) {
+            console.log("\nStopping bot loop before exiting...");
+            stopTradingLoop();
+          }
           running = false;
           break;
         default:
@@ -173,6 +204,10 @@ async function runCli() {
   }
 
   // --- Unsubscribe DriftClient on Exit ---
+  // Ensure bot loop is stopped before unsubscribing client
+  if (isLoopRunning()) {
+    stopTradingLoop();
+  }
   if (driftClient && isClientSubscribed) {
     console.log("\nUnsubscribing Drift Client...");
     await driftClient.unsubscribe();
