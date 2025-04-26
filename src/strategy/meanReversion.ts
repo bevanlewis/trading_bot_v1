@@ -1,13 +1,24 @@
 // src/strategy/meanReversion.ts
-import { DriftClient, PositionDirection } from "@drift-labs/sdk";
-import { getOraclePriceData, getOpenPositions } from "../drift/data";
+import {
+  DriftClient,
+  PositionDirection,
+  BN,
+  convertToNumber,
+  BASE_PRECISION,
+} from "@drift-labs/sdk";
+import {
+  getOraclePriceData,
+  getOpenPositions,
+  getAccountState,
+} from "../drift/data";
 import { placeMarketOrder, closePosition } from "../drift/orders";
 
 // --- Strategy Configuration ---
 const PRICE_QUEUE_LENGTH = 21; // Lookback period for SMA
 const Z_SCORE_ENTRY_THRESHOLD = 2.0; // Enter if Z-score exceeds this (positive or negative)
 const Z_SCORE_EXIT_THRESHOLD = 0.5; // Exit (TP) if Z-score comes back within this range of 0
-const TRADE_AMOUNT_BASE = 0.01; // Example trade size
+const PORTFOLIO_RISK_PER_TRADE = 0.02; // Trade size as % of total collateral (e.g., 2%)
+const MAX_PORTFOLIO_ALLOCATION = 0.4; // Max % of total collateral to be in positions (e.g., 40%)
 
 // --- State Variables ---
 let priceQueue: number[] = [];
@@ -59,16 +70,27 @@ export async function runMeanReversionLogic(
 ) {
   console.log(` -> Running Mean Reversion Logic for Market ${marketIndex}`);
 
-  // 1. Fetch latest price
+  // 1. Fetch Account State (for collateral)
+  const accountState = getAccountState(driftClient);
+  if (!accountState || accountState.totalCollateral <= 0) {
+    console.error(
+      "  -> ❌ Could not get account state or total collateral is zero. Skipping check."
+    );
+    return;
+  }
+  const totalCollateral = accountState.totalCollateral;
+  console.log(`  -> Total Collateral: $${totalCollateral.toFixed(2)}`);
+
+  // 2. Fetch latest price
   const oraclePriceData = getOraclePriceData(driftClient, marketIndex);
   if (!oraclePriceData) {
     console.error("  -> ❌ Could not get oracle price data. Skipping check.");
     return;
   }
   const currentPrice = oraclePriceData.price;
-  console.log(`  -> Current Price: ${currentPrice.toFixed(4)}`);
+  console.log(`  -> Current Price: $${currentPrice.toFixed(4)}`);
 
-  // 2. Update price queue
+  // 3. Update price queue
   priceQueue.push(currentPrice);
   if (priceQueue.length > PRICE_QUEUE_LENGTH) {
     priceQueue.shift(); // Keep queue at fixed size
@@ -77,15 +99,12 @@ export async function runMeanReversionLogic(
     `  -> Price Queue Size: ${priceQueue.length}/${PRICE_QUEUE_LENGTH}`
   );
 
-  // 3. Calculate indicators
+  // 4. Calculate indicators
   const sma = calculateSMA(priceQueue);
-  if (sma === null) {
-    console.log("  -> Not enough data for SMA calculation yet.");
-    return;
-  }
   const stdDev = calculateStdDev(priceQueue, sma);
-  if (stdDev === null) {
-    console.log("  -> Not enough data for StdDev calculation yet.");
+
+  if (sma === null || stdDev === null) {
+    console.log("  -> Not enough data for SMA/StdDev calculation yet.");
     return;
   }
   console.log(`  -> SMA: ${sma.toFixed(4)}, StdDev: ${stdDev.toFixed(4)}`);
@@ -100,18 +119,52 @@ export async function runMeanReversionLogic(
     return; // Cannot proceed without valid Z-Score
   }
 
-  // 4. Fetch current position
+  // 5. Fetch current position
   const openPositions = getOpenPositions(driftClient);
   const currentPosition = openPositions?.find(
     (p) => p.marketIndex === marketIndex
   );
-  const positionSize = currentPosition?.baseAssetAmount ?? 0;
-  console.log(`  -> Current Position Size: ${positionSize}`);
+  const positionSizeBase = currentPosition?.baseAssetAmount ?? 0;
+  console.log(`  -> Current Position Size (Base): ${positionSizeBase}`);
 
-  // 5. Check Entry/Exit Conditions using Z-Score
+  // 6. Calculate current capital usage and limits
+  const currentCapitalUsage = Math.abs(positionSizeBase) * currentPrice; // Approx value in quote
+  const maxAllowedCapital = totalCollateral * MAX_PORTFOLIO_ALLOCATION;
+
+  // Fetch Perp Market Account for market parameters
+  const perpMarketAccount = driftClient.getPerpMarketAccount(marketIndex);
+  if (!perpMarketAccount) {
+    console.error(
+      `  -> ❌ Could not get perp market account for index ${marketIndex}. Skipping check.`
+    );
+    return;
+  }
+  // Get the minimum order size (step size) and convert it
+  const minOrderSizeBN = perpMarketAccount.amm.orderStepSize;
+  const minOrderSizeNumber = convertToNumber(minOrderSizeBN, BASE_PRECISION);
+  console.log(`  -> Market Min Order Size (Step Size): ${minOrderSizeNumber}`);
+
+  // Calculate desired trade size based on portfolio risk
+  const desiredTradeValueQuote = totalCollateral * PORTFOLIO_RISK_PER_TRADE;
+  const desiredTradeSizeBase = desiredTradeValueQuote / currentPrice;
+
+  // Determine actual trade size, ensuring it meets minimum
+  const actualTradeSizeBase = Math.max(
+    desiredTradeSizeBase,
+    minOrderSizeNumber
+  );
+
+  console.log(
+    `  -> Desired Trade Size (2%): ~${desiredTradeSizeBase.toFixed(6)} Base`
+  );
+  console.log(
+    `  -> Actual Trade Size (>= Min): ${actualTradeSizeBase.toFixed(6)} Base`
+  );
+
+  // 7. Check Entry/Exit Conditions using Z-Score
 
   // Exit condition: If we have a position, check if Z-score crossed exit threshold
-  if (positionSize > 0) {
+  if (positionSizeBase > 0) {
     // Currently Long
     if (zScore >= -Z_SCORE_EXIT_THRESHOLD) {
       // Z-score moved up towards/past zero
@@ -127,7 +180,7 @@ export async function runMeanReversionLogic(
       }
       return; // Exit after closing
     }
-  } else if (positionSize < 0) {
+  } else if (positionSizeBase < 0) {
     // Currently Short
     if (zScore <= Z_SCORE_EXIT_THRESHOLD) {
       // Z-score moved down towards/past zero
@@ -146,38 +199,47 @@ export async function runMeanReversionLogic(
   }
 
   // Entry condition: If no position, check if Z-score crossed entry threshold
-  if (positionSize === 0) {
-    if (zScore < -Z_SCORE_ENTRY_THRESHOLD) {
+  if (positionSizeBase === 0) {
+    // Check max allocation BEFORE checking entry signal
+    if (currentCapitalUsage >= maxAllowedCapital) {
       console.log(
-        `  -> 🔥 Entry Long Signal: Z-Score (${zScore.toFixed(
-          4
-        )}) < ${-Z_SCORE_ENTRY_THRESHOLD}`
+        `  -> 🟡 Skipping Entry: Current capital usage ($${currentCapitalUsage.toFixed(
+          2
+        )}) >= max allocation ($${maxAllowedCapital.toFixed(2)})`
       );
-      try {
-        await placeMarketOrder(
-          driftClient,
-          marketIndex,
-          PositionDirection.LONG,
-          TRADE_AMOUNT_BASE
+    } else {
+      if (zScore < -Z_SCORE_ENTRY_THRESHOLD) {
+        console.log(
+          `  -> 🔥 Entry Long Signal: Z-Score (${zScore.toFixed(
+            4
+          )}) < ${-Z_SCORE_ENTRY_THRESHOLD}`
         );
-      } catch (error) {
-        console.error("  -> ❌ Error placing long order:", error);
-      }
-    } else if (zScore > Z_SCORE_ENTRY_THRESHOLD) {
-      console.log(
-        `  -> 🔥 Entry Short Signal: Z-Score (${zScore.toFixed(
-          4
-        )}) > ${Z_SCORE_ENTRY_THRESHOLD}`
-      );
-      try {
-        await placeMarketOrder(
-          driftClient,
-          marketIndex,
-          PositionDirection.SHORT,
-          TRADE_AMOUNT_BASE
+        try {
+          await placeMarketOrder(
+            driftClient,
+            marketIndex,
+            PositionDirection.LONG,
+            actualTradeSizeBase
+          );
+        } catch (error) {
+          console.error("  -> ❌ Error placing long order:", error);
+        }
+      } else if (zScore > Z_SCORE_ENTRY_THRESHOLD) {
+        console.log(
+          `  -> 🔥 Entry Short Signal: Z-Score (${zScore.toFixed(
+            4
+          )}) > ${Z_SCORE_ENTRY_THRESHOLD}`
         );
-      } catch (error) {
-        console.error("  -> ❌ Error placing short order:", error);
+        try {
+          await placeMarketOrder(
+            driftClient,
+            marketIndex,
+            PositionDirection.SHORT,
+            actualTradeSizeBase
+          );
+        } catch (error) {
+          console.error("  -> ❌ Error placing short order:", error);
+        }
       }
     }
   }
