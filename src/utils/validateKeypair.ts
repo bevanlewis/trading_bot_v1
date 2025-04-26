@@ -9,45 +9,66 @@ import {
 
 console.log("Attempting to load keypair using configuration from .env...");
 
-// Check if the expected public key was loaded from the environment
-if (!expectedPublicKeyFromEnv) {
-  console.error(
-    "\n❌ Error! The EXPECTED_PUBLIC_KEY environment variable is not set in your .env file."
-  );
-  process.exit(1);
+// Exported function to perform the validation
+export async function runKeypairValidation(): Promise<boolean> {
+  // Check if the expected public key was loaded from the environment
+  if (!expectedPublicKeyFromEnv) {
+    console.error(
+      "\n❌ Error! The EXPECTED_PUBLIC_KEY environment variable is not set in your .env file."
+    );
+    // process.exit(1); // Removed exit
+    return false; // Return false on error
+  }
+
+  console.log(`Expected Public Key (from .env): ${expectedPublicKeyFromEnv}`);
+
+  try {
+    // Use the centralized function to load the keypair
+    // This function reads the path from .env and handles file reading/parsing
+    const keypair: Keypair = loadKeypair();
+
+    // Get the public key as a base58 string from the loaded keypair
+    const derivedPublicKey = keypair.publicKey.toBase58();
+
+    // Compare the derived public key with the one loaded from .env
+    if (derivedPublicKey === expectedPublicKeyFromEnv) {
+      console.log(
+        "\n✅ Success! The derived public key matches the expected public key from .env."
+      );
+      return true; // Return true on success
+    } else {
+      console.error(
+        "\n❌ Error! The derived public key does NOT match the expected public key from .env."
+      );
+      console.error(`   Expected: ${expectedPublicKeyFromEnv}`);
+      console.error(`   Derived:  ${derivedPublicKey}`);
+      // process.exit(1); // Exit with error if mismatch // Removed exit
+      return false; // Return false on mismatch
+    }
+  } catch (error) {
+    // Catch errors potentially thrown by loadKeypair (e.g., SOLANA_KEYPAIR_PATH missing, file not found)
+    console.error("\n❌ An error occurred during keypair validation:");
+    if (error instanceof Error) {
+      console.error(`   Message: ${error.message}`);
+    } else {
+      console.error("   An unknown error occurred.");
+    }
+    // Exit with an error code to indicate failure
+    // process.exit(1); // Removed exit
+    return false; // Return false on exception
+  }
 }
 
-console.log(`Expected Public Key (from .env): ${expectedPublicKeyFromEnv}`);
-
-try {
-  // Use the centralized function to load the keypair
-  // This function reads the path from .env and handles file reading/parsing
-  const keypair: Keypair = loadKeypair();
-
-  // Get the public key as a base58 string from the loaded keypair
-  const derivedPublicKey = keypair.publicKey.toBase58();
-
-  // Compare the derived public key with the one loaded from .env
-  if (derivedPublicKey === expectedPublicKeyFromEnv) {
-    console.log(
-      "\n✅ Success! The derived public key matches the expected public key from .env."
-    );
-  } else {
-    console.error(
-      "\n❌ Error! The derived public key does NOT match the expected public key from .env."
-    );
-    console.error(`   Expected: ${expectedPublicKeyFromEnv}`);
-    console.error(`   Derived:  ${derivedPublicKey}`);
-    process.exit(1); // Exit with error if mismatch
-  }
-} catch (error) {
-  // Catch errors potentially thrown by loadKeypair (e.g., SOLANA_KEYPAIR_PATH missing, file not found)
-  console.error("\n❌ An error occurred during keypair validation:");
-  if (error instanceof Error) {
-    console.error(`   Message: ${error.message}`);
-  } else {
-    console.error("   An unknown error occurred.");
-  }
-  // Exit with an error code to indicate failure
-  process.exit(1);
+// Standalone execution block
+if (require.main === module) {
+  (async () => {
+    const success = await runKeypairValidation();
+    if (success) {
+      console.log("\nKeypair validation completed successfully.");
+      process.exit(0);
+    } else {
+      console.error("\nKeypair validation failed.");
+      process.exit(1);
+    }
+  })();
 }

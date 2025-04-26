@@ -10,12 +10,13 @@ import {
 import { Keypair } from "@solana/web3.js";
 import { getSolanaConnection, loadKeypair, activeConfig } from "../config";
 
-// Main async function to connect to Drift and test
-async function checkDriftConnection() {
+// Renamed original function and added export
+export async function runDriftConnectionTest() {
   console.log(
     `Attempting to connect to Drift Protocol (${activeConfig.driftEnv})...`
   );
   console.log(`   RPC Endpoint: ${activeConfig.rpcUrl}`);
+  let driftClient: DriftClient | null = null; // Keep track for unsubscribe
 
   try {
     // 1. Load Solana Keypair
@@ -33,7 +34,7 @@ async function checkDriftConnection() {
 
     // 4. Initialize DriftClient
     console.log("   Initializing DriftClient...");
-    const driftClient = new DriftClient({
+    driftClient = new DriftClient({
       connection: connection,
       wallet: wallet,
       env: activeConfig.driftEnv,
@@ -108,11 +109,6 @@ async function checkDriftConnection() {
     }
 
     console.log("\n✅ Drift Protocol Connection Test Completed!");
-
-    // Unsubscribe when done (important for cleanup)
-    console.log("\n   Unsubscribing DriftClient...");
-    await driftClient.unsubscribe();
-    console.log("   DriftClient unsubscribed.");
   } catch (error) {
     console.error("\n❌ Error during Drift connection or test:");
     if (error instanceof Error) {
@@ -120,12 +116,27 @@ async function checkDriftConnection() {
     } else {
       console.error("   An unknown error occurred:", error);
     }
-    process.exit(1); // Exit with error code
+    // Removed process.exit(1)
+    throw error; // Re-throw error
+  } finally {
+    // Ensure unsubscribe happens even on error after client init
+    if (driftClient && driftClient.isSubscribed) {
+      console.log("\n   Unsubscribing DriftClient...");
+      await driftClient.unsubscribe();
+      console.log("   DriftClient unsubscribed.");
+    }
   }
 }
 
-// Execute the async function
-checkDriftConnection();
+// Execute the async function only if run directly
+// Keep this block for standalone testing
+if (require.main === module) {
+  console.log("--- Running Drift Connection Test Standalone ---");
+  runDriftConnectionTest().catch((e) => {
+    console.error("Standalone run failed:", e);
+    process.exit(1);
+  });
+}
 
 // Helper function to convert byte array market names to readable strings (optional)
 // function convertToSymbol(bytes: number[]): string {

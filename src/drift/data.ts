@@ -314,127 +314,206 @@ export function getOpenOrders(driftClient: DriftClient): Array<{
   }
 }
 
-// Example usage (can be run directly with ts-node or integrated elsewhere)
-async function main() {
-  // Initialize Drift Client (similar to connect.ts)
-  console.log("Initializing Drift Client for price fetching...");
-  const connection = getSolanaConnection();
-  const keypair = loadKeypair();
-  const wallet = new Wallet(keypair);
-  const driftClient = new DriftClient({
-    connection,
-    wallet,
-    env: activeConfig.driftEnv,
-    accountSubscription: {
-      type: "polling",
-      accountLoader: new BulkAccountLoader(
-        connection,
-        activeConfig.solanaCommitment ?? "confirmed",
-        1000 // Short interval for example
-      ),
-    },
-  });
-
-  console.log("Subscribing Drift Client...");
-  if (!(await driftClient.subscribe())) {
-    console.error("Failed to subscribe DriftClient.");
-    return;
-  }
-
-  // --- Fetch and Display Market Name & Price ---
-  const targetMarketIndex = 0;
+// --- NEW: Function to Fetch Single Market Info ---
+/**
+ * Initializes DriftClient, fetches and displays name and oracle price
+ * for a specific market index, then unsubscribes.
+ * @param targetMarketIndex The index of the perp market to fetch.
+ */
+export async function runFetchSingleMarketInfo(targetMarketIndex: number) {
   console.log(
-    `\nAttempting to fetch name for market index ${targetMarketIndex}...`
+    `\n--- Fetching Single Market Info (Market ${targetMarketIndex}) ---`
   );
-  const marketName = getMarketName(driftClient, targetMarketIndex);
-  const marketDisplayName = marketName
-    ? marketName
-    : `Market ${targetMarketIndex}`;
-  console.log(`\nAttempting to fetch price for ${marketDisplayName}...`);
-  const priceData = getOraclePriceData(driftClient, targetMarketIndex);
-
-  if (marketName && priceData) {
-    console.log(`\n--- Data for ${marketDisplayName} ---`);
-    console.log(`   Market Index: ${targetMarketIndex}`);
-    console.log(`   Oracle Price: ${priceData.price.toFixed(4)}`);
-    console.log(`   Confidence Interval: ±${priceData.confidence.toFixed(4)}`);
-    console.log(`   Slot: ${priceData.slot}`);
-    console.log("----------------------------- ");
-  } else {
-    console.log(
-      `\nCould not fetch complete market data for Market Index ${targetMarketIndex}.`
-    );
-  }
-
-  // --- Fetch and Display Account State ---
-  console.log(`\nAttempting to fetch account state...`);
-  const accountState = getAccountState(driftClient);
-
-  if (accountState) {
-    console.log("\n--- Account State --- ");
-    console.log(
-      `   Total Collateral: $${accountState.totalCollateral.toFixed(4)}`
-    );
-    console.log(
-      `   Free Collateral: $${accountState.freeCollateral.toFixed(4)}`
-    );
-    console.log(`   Leverage: ${accountState.leverage.toFixed(4)}x`);
-    console.log("---------------------");
-  }
-
-  // --- Fetch and Display Open Positions ---
-  console.log(`\nAttempting to fetch open positions...`);
-  const openPositions = getOpenPositions(driftClient);
-
-  if (openPositions && openPositions.length > 0) {
-    console.log("\n--- Open Positions --- ");
-    openPositions.forEach((pos) => {
-      console.log(`  Market: ${pos.marketName} (${pos.marketIndex})`);
-      console.log(`    Size: ${pos.baseAssetAmount.toFixed(4)} Base`);
-      console.log(`    Entry Price: $${pos.entryPrice.toFixed(4)}`);
-      console.log(`    Unrealized PnL: $${pos.pnl.toFixed(4)}`);
-      // console.log(`    Funding Rate (approx daily %): ${pos.fundingRate.toFixed(6)}%`);
-      console.log("    ---");
+  let driftClient: DriftClient | null = null;
+  try {
+    const connection = getSolanaConnection();
+    const keypair = loadKeypair();
+    const wallet = new Wallet(keypair);
+    driftClient = new DriftClient({
+      connection,
+      wallet,
+      env: activeConfig.driftEnv,
+      accountSubscription: {
+        type: "polling",
+        accountLoader: new BulkAccountLoader(
+          connection,
+          activeConfig.solanaCommitment ?? "confirmed",
+          1000
+        ),
+      },
     });
-    console.log("----------------------");
-  } else if (openPositions) {
-    // Check if it's an empty array
-    console.log("   No open positions.");
-  }
 
-  // --- Fetch and Display Open Orders ---
-  console.log(`\nAttempting to fetch open orders...`);
-  const openOrders = getOpenOrders(driftClient);
+    console.log("Subscribing Drift Client...");
+    if (!(await driftClient.subscribe())) {
+      console.error("Failed to subscribe DriftClient.");
+      return;
+    }
+    // Allow time for initial data load
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
-  if (openOrders && openOrders.length > 0) {
-    console.log("\n--- Open Orders --- ");
-    openOrders.forEach((order) => {
-      console.log(`  Order ID: ${order.orderId} (${order.status})`);
+    // Fetch and Display Market Name & Price
+    console.log(
+      `Attempting to fetch name for market index ${targetMarketIndex}...`
+    );
+    const marketName = getMarketName(driftClient, targetMarketIndex);
+    const marketDisplayName = marketName
+      ? marketName
+      : `Market ${targetMarketIndex}`;
+    console.log(`Attempting to fetch price for ${marketDisplayName}...`);
+    const priceData = getOraclePriceData(driftClient, targetMarketIndex);
+
+    if (marketName && priceData) {
+      console.log(`\n--- Data for ${marketDisplayName} ---`);
+      console.log(`   Market Index: ${targetMarketIndex}`);
+      console.log(`   Oracle Price: ${priceData.price.toFixed(4)}`);
       console.log(
-        `    Market: ${order.marketName} (${order.marketType} ${order.marketIndex})`
+        `   Confidence Interval: ±${priceData.confidence.toFixed(4)}`
       );
-      console.log(`    Type: ${order.orderType}`);
-      console.log(`    Side: ${order.direction}`);
-      console.log(`    Size: ${order.baseAssetAmount.toFixed(4)}`);
-      console.log(`    Price: $${order.price.toFixed(4)}`);
+      console.log(`   Slot: ${priceData.slot}`);
+      console.log("----------------------------- ");
+    } else {
       console.log(
-        `    ReduceOnly: ${order.reduceOnly}, PostOnly: ${order.postOnly}`
+        `\nCould not fetch complete market data for Market Index ${targetMarketIndex}.`
       );
-      console.log("    ---");
-    });
-    console.log("-------------------");
-  } else if (openOrders) {
-    // Check if it's an empty array
-    console.log("   No open orders.");
+    }
+  } catch (error) {
+    console.error("\n❌ Error fetching single market info:", error);
+  } finally {
+    if (driftClient && driftClient.isSubscribed) {
+      console.log("\nUnsubscribing Drift Client...");
+      await driftClient.unsubscribe();
+      console.log("Client unsubscribed.");
+    }
+    console.log("---------------------------------------");
   }
-
-  // Unsubscribe
-  console.log("\nUnsubscribing Drift Client...");
-  await driftClient.unsubscribe();
-  console.log("Client unsubscribed.");
 }
 
-// If this file is run directly, execute main
+// --- NEW: Function to Fetch Account State, Positions, and Orders ---
+/**
+ * Initializes DriftClient, fetches and displays account state,
+ * open positions, and open orders, then unsubscribes.
+ */
+export async function runFetchAccountAndPositions() {
+  console.log("\n--- Fetching Account State, Positions & Orders ---");
+  let driftClient: DriftClient | null = null;
+  try {
+    const connection = getSolanaConnection();
+    const keypair = loadKeypair();
+    const wallet = new Wallet(keypair);
+    driftClient = new DriftClient({
+      connection,
+      wallet,
+      env: activeConfig.driftEnv,
+      accountSubscription: {
+        type: "polling",
+        accountLoader: new BulkAccountLoader(
+          connection,
+          activeConfig.solanaCommitment ?? "confirmed",
+          1000
+        ),
+      },
+    });
+
+    console.log("Subscribing Drift Client...");
+    if (!(await driftClient.subscribe())) {
+      console.error("Failed to subscribe DriftClient.");
+      return;
+    }
+    // Allow time for initial data load
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    // Fetch and Display Account State
+    console.log(`\nAttempting to fetch account state...`);
+    const accountState = getAccountState(driftClient);
+
+    if (accountState) {
+      console.log("\n--- Account State --- ");
+      console.log(
+        `   Total Collateral: $${accountState.totalCollateral.toFixed(4)}`
+      );
+      console.log(
+        `   Free Collateral: $${accountState.freeCollateral.toFixed(4)}`
+      );
+      console.log(`   Leverage: ${accountState.leverage.toFixed(4)}x`);
+      console.log("---------------------");
+    } else {
+      console.log("   Could not fetch account state.");
+    }
+
+    // Fetch and Display Open Positions
+    console.log(`\nAttempting to fetch open positions...`);
+    const openPositions = getOpenPositions(driftClient);
+
+    if (openPositions && openPositions.length > 0) {
+      console.log("\n--- Open Positions --- ");
+      openPositions.forEach((pos) => {
+        console.log(`  Market: ${pos.marketName} (${pos.marketIndex})`);
+        console.log(`    Size: ${pos.baseAssetAmount.toFixed(4)} Base`);
+        console.log(`    Entry Price: $${pos.entryPrice.toFixed(4)}`);
+        console.log(`    Unrealized PnL: $${pos.pnl.toFixed(4)}`);
+        // console.log(`    Funding Rate (approx daily %): ${pos.fundingRate.toFixed(6)}%`);
+        console.log("    ---");
+      });
+      console.log("----------------------");
+    } else if (openPositions) {
+      console.log("   No open positions.");
+    } else {
+      console.log("   Could not fetch open positions.");
+    }
+
+    // Fetch and Display Open Orders
+    console.log(`\nAttempting to fetch open orders...`);
+    const openOrders = getOpenOrders(driftClient);
+
+    if (openOrders && openOrders.length > 0) {
+      console.log("\n--- Open Orders --- ");
+      openOrders.forEach((order) => {
+        console.log(`  Order ID: ${order.orderId} (${order.status})`);
+        console.log(
+          `    Market: ${order.marketName} (${order.marketType} ${order.marketIndex})`
+        );
+        console.log(`    Type: ${order.orderType}`);
+        console.log(`    Side: ${order.direction}`);
+        console.log(`    Size: ${order.baseAssetAmount.toFixed(4)}`);
+        console.log(`    Price: $${order.price.toFixed(4)}`);
+        console.log(
+          `    ReduceOnly: ${order.reduceOnly}, PostOnly: ${order.postOnly}`
+        );
+        console.log("    ---");
+      });
+      console.log("-------------------");
+    } else if (openOrders) {
+      console.log("   No open orders.");
+    } else {
+      console.log("   Could not fetch open orders.");
+    }
+  } catch (error) {
+    console.error("\n❌ Error fetching account/position data:", error);
+  } finally {
+    if (driftClient && driftClient.isSubscribed) {
+      console.log("\nUnsubscribing Drift Client...");
+      await driftClient.unsubscribe();
+      console.log("Client unsubscribed.");
+    }
+    console.log("--------------------------------------------------");
+  }
+}
+
+// --- Standalone Execution Block ---
+// Updated to call one of the new functions for testing, e.g., market info for index 0
 if (require.main === module) {
-  main().catch((e) => console.error("Error in main():", e));
+  console.log("--- Running Single Market Info Fetch Standalone (Market 0) ---");
+  runFetchSingleMarketInfo(0).catch((e) => {
+    console.error("Standalone run failed:", e);
+    process.exit(1);
+  });
+
+  // Or test the account/positions fetch:
+  /*
+  console.log("--- Running Account/Positions Fetch Standalone ---");
+  runFetchAccountAndPositions().catch((e) => {
+      console.error("Standalone run failed:", e);
+      process.exit(1);
+  });
+  */
 }

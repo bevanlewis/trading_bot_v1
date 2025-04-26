@@ -11,12 +11,14 @@
   "description": "",
   "dependencies": {
     "@drift-labs/sdk": "^2.120.0-beta.1",
+    "@inquirer/prompts": "^7.5.0",
     "@solana/web3.js": "^1.91.8",
-    "rpc-websockets": "7.11.0",
     "bs58": "^6.0.0",
-    "dotenv": "^16.5.0"
+    "dotenv": "^16.5.0",
+    "rpc-websockets": "7.11.0"
   },
   "devDependencies": {
+    "@types/inquirer": "^8.2.10",
     "@types/node": "^22.15.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"

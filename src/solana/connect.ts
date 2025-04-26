@@ -16,7 +16,8 @@ const USDC_MINT_ADDRESS_MAINNET = new PublicKey(
 );
 const USDC_DECIMALS = 6; // USDC typically has 6 decimal places
 
-async function checkBalances() {
+// Renamed original function and added export
+export async function runSolanaConnectionTest() {
   console.log(`Attempting to connect to Solana (${activeConfig.driftEnv})...`);
   console.log(`   RPC Endpoint: ${activeConfig.rpcUrl}`);
 
@@ -114,9 +115,18 @@ async function checkBalances() {
     } else {
       console.error("   An unknown error occurred:", error);
     }
-    process.exit(1); // Exit with error code
+    // Removed process.exit(1) - let the caller handle exit
+    // process.exit(1);
+    throw error; // Re-throw error so CLI can catch it
   }
 }
 
-// Execute the async function
-checkBalances();
+// Execute the async function only if run directly
+// Keep this block for standalone testing
+if (require.main === module) {
+  console.log("--- Running Solana Connection Test Standalone ---");
+  runSolanaConnectionTest().catch((e) => {
+    console.error("Standalone run failed:", e);
+    process.exit(1);
+  });
+}
