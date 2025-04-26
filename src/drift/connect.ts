@@ -8,58 +8,33 @@ import {
   BulkAccountLoader,
 } from "@drift-labs/sdk";
 import { Keypair } from "@solana/web3.js";
-import { getSolanaConnection, loadKeypair, activeConfig } from "../config";
+// import { getSolanaConnection, loadKeypair, activeConfig } from "../config";
 
-// Renamed original function and added export
-export async function runDriftConnectionTest() {
-  console.log(
-    `Attempting to connect to Drift Protocol (${activeConfig.driftEnv})...`
-  );
-  console.log(`   RPC Endpoint: ${activeConfig.rpcUrl}`);
-  let driftClient: DriftClient | null = null; // Keep track for unsubscribe
-
+// --- Refactored: Function to Test Drift Connection (Accepts DriftClient) ---
+/**
+ * Performs checks using a pre-initialized and subscribed DriftClient.
+ * @param driftClient An initialized and subscribed DriftClient instance.
+ */
+export async function testDriftConnection(driftClient: DriftClient) {
+  console.log(`\n--- Testing Drift Connection (using existing client) ---`);
+  // REMOVED: Initialization, subscription, unsubscription logic
   try {
-    // 1. Load Solana Keypair
-    const keypair: Keypair = loadKeypair();
-    console.log(`   Wallet Public Key: ${keypair.publicKey.toBase58()}`);
-
-    // 2. Create Solana Connection
-    const connection = getSolanaConnection();
-    console.log("   Solana connection object created.");
-
-    // 3. Wrap Keypair in Drift Wallet
-    // The DriftClient requires the keypair to be wrapped in its Wallet class
-    const wallet = new Wallet(keypair);
-    console.log("   Drift SDK Wallet wrapper created.");
-
-    // 4. Initialize DriftClient
-    console.log("   Initializing DriftClient...");
-    driftClient = new DriftClient({
-      connection: connection,
-      wallet: wallet,
-      env: activeConfig.driftEnv,
-      // --- Force polling instead of websockets for diagnosis ---
-      accountSubscription: {
-        type: "polling",
-        accountLoader: new BulkAccountLoader(
-          connection,
-          activeConfig.solanaCommitment ?? "confirmed", // Use commitment from config
-          5000 // Polling interval in ms (e.g., 5 seconds)
-        ),
-      },
-    });
-    console.log("   DriftClient instance created (using polling).");
-
-    // 5. Subscribe to DriftClient
-    // This is crucial! It fetches initial market data, oracle data, etc.
-    console.log("   Subscribing DriftClient (fetches initial state)...");
-    const subscribeSucceeded = await driftClient.subscribe();
-    if (!subscribeSucceeded) {
-      throw new Error("DriftClient failed to subscribe.");
+    // Use the passed driftClient
+    if (!driftClient.isSubscribed) {
+      console.error(
+        "\n❌ DriftClient is not subscribed. Cannot perform tests."
+      );
+      return;
     }
-    console.log("   DriftClient subscribed successfully.");
 
-    // --- Test Drift Connection ---
+    // Log wallet from the client
+    console.log(
+      `   Wallet Public Key: ${driftClient.wallet.publicKey.toBase58()}`
+    );
+    console.log(`   Using Environment: ${driftClient.env}`);
+    console.log(
+      `   Using Connection Endpoint: ${driftClient.connection.rpcEndpoint}`
+    );
 
     // a) Check if Drift User Account exists for this wallet
     console.log("\n   Checking for existing Drift UserAccount...");
@@ -110,32 +85,11 @@ export async function runDriftConnectionTest() {
 
     console.log("\n✅ Drift Protocol Connection Test Completed!");
   } catch (error) {
-    console.error("\n❌ Error during Drift connection or test:");
-    if (error instanceof Error) {
-      console.error(`   Message: ${error.message}`);
-    } else {
-      console.error("   An unknown error occurred:", error);
-    }
-    // Removed process.exit(1)
-    throw error; // Re-throw error
+    console.error("\n❌ Error during Drift connection test:", error);
   } finally {
-    // Ensure unsubscribe happens even on error after client init
-    if (driftClient && driftClient.isSubscribed) {
-      console.log("\n   Unsubscribing DriftClient...");
-      await driftClient.unsubscribe();
-      console.log("   DriftClient unsubscribed.");
-    }
+    // REMOVED: Unsubscribe logic here
+    console.log("---------------------------------------------");
   }
-}
-
-// Execute the async function only if run directly
-// Keep this block for standalone testing
-if (require.main === module) {
-  console.log("--- Running Drift Connection Test Standalone ---");
-  runDriftConnectionTest().catch((e) => {
-    console.error("Standalone run failed:", e);
-    process.exit(1);
-  });
 }
 
 // Helper function to convert byte array market names to readable strings (optional)

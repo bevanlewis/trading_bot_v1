@@ -13,7 +13,6 @@ import {
   Order,
   isVariant,
 } from "@drift-labs/sdk";
-import { getSolanaConnection, loadKeypair, activeConfig } from "../config";
 import { Buffer } from "buffer";
 
 // --- Helper Function to Convert Bytes to String ---
@@ -314,44 +313,29 @@ export function getOpenOrders(driftClient: DriftClient): Array<{
   }
 }
 
-// --- NEW: Function to Fetch Single Market Info ---
+// --- Refactored: Function to Fetch Single Market Info (Accepts DriftClient) ---
 /**
- * Initializes DriftClient, fetches and displays name and oracle price
- * for a specific market index, then unsubscribes.
+ * Fetches and displays name and oracle price for a specific market index
+ * using a pre-initialized DriftClient.
+ * @param driftClient An initialized and subscribed DriftClient instance.
  * @param targetMarketIndex The index of the perp market to fetch.
  */
-export async function runFetchSingleMarketInfo(targetMarketIndex: number) {
+export async function fetchSingleMarketInfo(
+  driftClient: DriftClient,
+  targetMarketIndex: number
+) {
   console.log(
     `\n--- Fetching Single Market Info (Market ${targetMarketIndex}) ---`
   );
-  let driftClient: DriftClient | null = null;
   try {
-    const connection = getSolanaConnection();
-    const keypair = loadKeypair();
-    const wallet = new Wallet(keypair);
-    driftClient = new DriftClient({
-      connection,
-      wallet,
-      env: activeConfig.driftEnv,
-      accountSubscription: {
-        type: "polling",
-        accountLoader: new BulkAccountLoader(
-          connection,
-          activeConfig.solanaCommitment ?? "confirmed",
-          1000
-        ),
-      },
-    });
-
-    console.log("Subscribing Drift Client...");
-    if (!(await driftClient.subscribe())) {
-      console.error("Failed to subscribe DriftClient.");
+    if (!driftClient.isSubscribed) {
+      console.error(
+        "\n❌ DriftClient is not subscribed. Cannot fetch market info."
+      );
       return;
     }
-    // Allow time for initial data load
-    await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    // Fetch and Display Market Name & Price
+    // Fetch and Display Market Name & Price (pass driftClient to helpers)
     console.log(
       `Attempting to fetch name for market index ${targetMarketIndex}...`
     );
@@ -379,50 +363,25 @@ export async function runFetchSingleMarketInfo(targetMarketIndex: number) {
   } catch (error) {
     console.error("\n❌ Error fetching single market info:", error);
   } finally {
-    if (driftClient && driftClient.isSubscribed) {
-      console.log("\nUnsubscribing Drift Client...");
-      await driftClient.unsubscribe();
-      console.log("Client unsubscribed.");
-    }
     console.log("---------------------------------------");
   }
 }
 
-// --- NEW: Function to Fetch Account State, Positions, and Orders ---
+// --- Refactored: Function to Fetch Account State, Positions, and Orders (Accepts DriftClient) ---
 /**
- * Initializes DriftClient, fetches and displays account state,
- * open positions, and open orders, then unsubscribes.
+ * Fetches and displays account state, open positions, and open orders
+ * using a pre-initialized DriftClient.
+ * @param driftClient An initialized and subscribed DriftClient instance.
  */
-export async function runFetchAccountAndPositions() {
+export async function fetchAccountAndPositions(driftClient: DriftClient) {
   console.log("\n--- Fetching Account State, Positions & Orders ---");
-  let driftClient: DriftClient | null = null;
   try {
-    const connection = getSolanaConnection();
-    const keypair = loadKeypair();
-    const wallet = new Wallet(keypair);
-    driftClient = new DriftClient({
-      connection,
-      wallet,
-      env: activeConfig.driftEnv,
-      accountSubscription: {
-        type: "polling",
-        accountLoader: new BulkAccountLoader(
-          connection,
-          activeConfig.solanaCommitment ?? "confirmed",
-          1000
-        ),
-      },
-    });
-
-    console.log("Subscribing Drift Client...");
-    if (!(await driftClient.subscribe())) {
-      console.error("Failed to subscribe DriftClient.");
+    if (!driftClient.isSubscribed) {
+      console.error("\n❌ DriftClient is not subscribed. Cannot fetch data.");
       return;
     }
-    // Allow time for initial data load
-    await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    // Fetch and Display Account State
+    // Fetch and Display Account State (pass driftClient)
     console.log(`\nAttempting to fetch account state...`);
     const accountState = getAccountState(driftClient);
 
@@ -440,7 +399,7 @@ export async function runFetchAccountAndPositions() {
       console.log("   Could not fetch account state.");
     }
 
-    // Fetch and Display Open Positions
+    // Fetch and Display Open Positions (pass driftClient)
     console.log(`\nAttempting to fetch open positions...`);
     const openPositions = getOpenPositions(driftClient);
 
@@ -461,7 +420,7 @@ export async function runFetchAccountAndPositions() {
       console.log("   Could not fetch open positions.");
     }
 
-    // Fetch and Display Open Orders
+    // Fetch and Display Open Orders (pass driftClient)
     console.log(`\nAttempting to fetch open orders...`);
     const openOrders = getOpenOrders(driftClient);
 
@@ -490,30 +449,6 @@ export async function runFetchAccountAndPositions() {
   } catch (error) {
     console.error("\n❌ Error fetching account/position data:", error);
   } finally {
-    if (driftClient && driftClient.isSubscribed) {
-      console.log("\nUnsubscribing Drift Client...");
-      await driftClient.unsubscribe();
-      console.log("Client unsubscribed.");
-    }
     console.log("--------------------------------------------------");
   }
-}
-
-// --- Standalone Execution Block ---
-// Updated to call one of the new functions for testing, e.g., market info for index 0
-if (require.main === module) {
-  console.log("--- Running Single Market Info Fetch Standalone (Market 0) ---");
-  runFetchSingleMarketInfo(0).catch((e) => {
-    console.error("Standalone run failed:", e);
-    process.exit(1);
-  });
-
-  // Or test the account/positions fetch:
-  /*
-  console.log("--- Running Account/Positions Fetch Standalone ---");
-  runFetchAccountAndPositions().catch((e) => {
-      console.error("Standalone run failed:", e);
-      process.exit(1);
-  });
-  */
 }
