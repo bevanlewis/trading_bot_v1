@@ -14,6 +14,7 @@ import {
   isVariant,
 } from "@drift-labs/sdk";
 import { Buffer } from "buffer";
+import { BN } from "@drift-labs/sdk";
 
 // --- Helper Function to Convert Bytes to String ---
 export function bytesToString(bytes: number[]): string {
@@ -106,15 +107,18 @@ export function getMarketName(
 
 // --- Function to Get Account State ---
 /**
- * Fetches key account state metrics like collateral and leverage.
- * NOTE: Margin requirement calculation removed due to type issues.
+ * Fetches key account state metrics including collateral, leverage, and margin requirements.
  * @param driftClient An initialized and subscribed DriftClient instance.
  * @returns An object with account state values or null if user not found.
  */
 export function getAccountState(driftClient: DriftClient): {
   totalCollateral: number;
   freeCollateral: number;
+  initialMarginRequirement: number;
+  maintenanceMarginRequirement: number;
   leverage: number;
+  // You could also add unrealized PnL here if desired
+  // unrealizedPnl: number;
 } | null {
   console.log("   Fetching account state...");
 
@@ -137,15 +141,29 @@ export function getAccountState(driftClient: DriftClient): {
     const totalCollateral = user.getTotalCollateral();
     const freeCollateral = user.getFreeCollateral();
     const leverage = user.getLeverage();
+    // Get margin requirements
+    const initialMarginRequirement = user.getInitialMarginRequirement();
+    const maintenanceMarginRequirement = user.getMaintenanceMarginRequirement();
+    // Optional: Get total PnL
+    // const unrealizedPnl = user.getUnrealizedPNL(true); // Include funding
 
     // Convert BN values to numbers
     const accountState = {
       totalCollateral: convertToNumber(totalCollateral, QUOTE_PRECISION),
       freeCollateral: convertToNumber(freeCollateral, QUOTE_PRECISION),
+      initialMarginRequirement: convertToNumber(
+        initialMarginRequirement,
+        QUOTE_PRECISION
+      ),
+      maintenanceMarginRequirement: convertToNumber(
+        maintenanceMarginRequirement,
+        QUOTE_PRECISION
+      ),
       leverage: convertToNumber(leverage, QUOTE_PRECISION),
+      // unrealizedPnl: convertToNumber(unrealizedPnl, QUOTE_PRECISION),
     };
 
-    console.log(`   ✅ Account state fetched (excluding margin req).`);
+    console.log(`   ✅ Account state fetched (including margin req).`);
     return accountState;
   } catch (error) {
     console.error("❌ Error fetching account state details:", error);
@@ -172,7 +190,8 @@ export function getOpenPositions(driftClient: DriftClient): Array<{
   quoteAssetAmount: number;
   entryPrice: number;
   pnl: number;
-  fundingRate: number;
+  lastFundingRateHr: number;
+  lastFundingTs: number;
 }> | null {
   console.log("   Fetching open positions...");
 
@@ -201,15 +220,28 @@ export function getOpenPositions(driftClient: DriftClient): Array<{
       const marketIndex = position.marketIndex;
       const marketName =
         getMarketName(driftClient, marketIndex) || `Market ${marketIndex}`;
-      // Use getUnrealizedPnl for more accurate PnL including funding
       const pnl = user.getUnrealizedPNL(false, marketIndex);
       const market = driftClient.getPerpMarketAccount(marketIndex);
-      // Funding rate calculation might need refinement or helper
-      const fundingRate = market
-        ? convertToNumber(market.amm.lastFundingRate, QUOTE_PRECISION) *
-          100 *
-          24
-        : 0; // Example: daily rate %
+
+      // Get last funding rate and timestamp
+      const lastFundingRate = market ? market.amm.lastFundingRate : new BN(0);
+      const lastFundingTs = market
+        ? market.amm.lastFundingRateTs.toNumber()
+        : 0;
+
+      // Convert funding rate to hourly percentage
+      // Funding rate is per second, scale to hour and percentage
+      const fundingRateHourlyPct =
+        convertToNumber(lastFundingRate, QUOTE_PRECISION) * 60 * 60 * 100;
+
+      // Safely calculate entry price
+      const baseAmountAbs = position.baseAssetAmount.abs();
+      const entryPriceNumber = baseAmountAbs.isZero()
+        ? 0 // Avoid division by zero
+        : convertToNumber(
+            position.quoteEntryAmount.div(baseAmountAbs),
+            PRICE_PRECISION
+          );
 
       return {
         marketIndex: marketIndex,
@@ -222,12 +254,12 @@ export function getOpenPositions(driftClient: DriftClient): Array<{
           position.quoteAssetAmount,
           QUOTE_PRECISION
         ),
-        entryPrice: convertToNumber(
-          position.quoteEntryAmount.div(position.baseAssetAmount.abs()),
-          PRICE_PRECISION
-        ), // Calculate entry price
+        // Use the safely calculated entry price
+        entryPrice: entryPriceNumber,
         pnl: convertToNumber(pnl, QUOTE_PRECISION),
-        fundingRate: fundingRate, // This is simplified
+        // Renamed field to be clearer
+        lastFundingRateHr: fundingRateHourlyPct,
+        lastFundingTs: lastFundingTs,
       };
     });
 
@@ -393,13 +425,26 @@ export async function fetchAccountAndPositions(driftClient: DriftClient) {
       console.log(
         `   Free Collateral: $${accountState.freeCollateral.toFixed(4)}`
       );
+      // Display Margin Requirements
+      console.log(
+        `   Initial Margin Req: $${accountState.initialMarginRequirement.toFixed(
+          4
+        )}`
+      );
+      console.log(
+        `   Maintenance Margin Req: $${accountState.maintenanceMarginRequirement.toFixed(
+          4
+        )}`
+      );
       console.log(`   Leverage: ${accountState.leverage.toFixed(4)}x`);
+      // Optional: Display PnL if added
+      // console.log(`   Unrealized PnL: $${accountState.unrealizedPnl.toFixed(4)}`);
       console.log("---------------------");
     } else {
       console.log("   Could not fetch account state.");
     }
 
-    // Fetch and Display Open Positions (pass driftClient)
+    // Fetch and Display Open Positions
     console.log(`\nAttempting to fetch open positions...`);
     const openPositions = getOpenPositions(driftClient);
 
@@ -410,7 +455,17 @@ export async function fetchAccountAndPositions(driftClient: DriftClient) {
         console.log(`    Size: ${pos.baseAssetAmount.toFixed(4)} Base`);
         console.log(`    Entry Price: $${pos.entryPrice.toFixed(4)}`);
         console.log(`    Unrealized PnL: $${pos.pnl.toFixed(4)}`);
-        // console.log(`    Funding Rate (approx daily %): ${pos.fundingRate.toFixed(6)}%`);
+        // Display refined funding rate info
+        console.log(
+          `    Last Funding Rate (Hourly %): ${pos.lastFundingRateHr.toFixed(
+            6
+          )}%`
+        );
+        console.log(
+          `    Last Funding Timestamp: ${new Date(
+            pos.lastFundingTs * 1000
+          ).toLocaleString()}`
+        );
         console.log("    ---");
       });
       console.log("----------------------");

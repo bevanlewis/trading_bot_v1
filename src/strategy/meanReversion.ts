@@ -4,12 +4,12 @@ import { getOraclePriceData, getOpenPositions } from "../drift/data";
 import { placeMarketOrder, closePosition } from "../drift/orders";
 
 // --- Strategy Configuration ---
-const PRICE_QUEUE_LENGTH = 20; // Lookback period for SMA (e.g., 20 data points)
-const STD_DEV_MULTIPLIER = 2; // Number of standard deviations for bands
-const TRADE_AMOUNT_BASE = 0.01; // Example: Trade 0.01 SOL per signal
+const PRICE_QUEUE_LENGTH = 21; // Lookback period for SMA
+const Z_SCORE_ENTRY_THRESHOLD = 2.0; // Enter if Z-score exceeds this (positive or negative)
+const Z_SCORE_EXIT_THRESHOLD = 0.5; // Exit (TP) if Z-score comes back within this range of 0
+const TRADE_AMOUNT_BASE = 0.01; // Example trade size
 
 // --- State Variables ---
-// Store recent prices for SMA calculation
 let priceQueue: number[] = [];
 
 // --- Helper Functions ---
@@ -79,19 +79,26 @@ export async function runMeanReversionLogic(
 
   // 3. Calculate indicators
   const sma = calculateSMA(priceQueue);
-  const stdDev = calculateStdDev(priceQueue, sma);
-
-  if (sma === null || stdDev === null) {
-    console.log("  -> Not enough data for SMA/StdDev calculation yet.");
+  if (sma === null) {
+    console.log("  -> Not enough data for SMA calculation yet.");
     return;
   }
-
-  const upperBand = sma + STD_DEV_MULTIPLIER * stdDev;
-  const lowerBand = sma - STD_DEV_MULTIPLIER * stdDev;
+  const stdDev = calculateStdDev(priceQueue, sma);
+  if (stdDev === null) {
+    console.log("  -> Not enough data for StdDev calculation yet.");
+    return;
+  }
   console.log(`  -> SMA: ${sma.toFixed(4)}, StdDev: ${stdDev.toFixed(4)}`);
-  console.log(
-    `  -> Bands: Lower=${lowerBand.toFixed(4)}, Upper=${upperBand.toFixed(4)}`
-  );
+
+  // Calculate Z-Score (handle division by zero)
+  let zScore: number | null = null;
+  if (stdDev > 0) {
+    zScore = (currentPrice - sma) / stdDev;
+    console.log(`  -> Z-Score: ${zScore.toFixed(4)}`);
+  } else {
+    console.log("  -> Standard Deviation is zero, cannot calculate Z-Score.");
+    return; // Cannot proceed without valid Z-Score
+  }
 
   // 4. Fetch current position
   const openPositions = getOpenPositions(driftClient);
@@ -101,13 +108,18 @@ export async function runMeanReversionLogic(
   const positionSize = currentPosition?.baseAssetAmount ?? 0;
   console.log(`  -> Current Position Size: ${positionSize}`);
 
-  // 5. Check Entry/Exit Conditions
+  // 5. Check Entry/Exit Conditions using Z-Score
 
-  // Exit condition: If we have a position, check if price crossed SMA
+  // Exit condition: If we have a position, check if Z-score crossed exit threshold
   if (positionSize > 0) {
     // Currently Long
-    if (currentPrice >= sma) {
-      console.log("  -> ✅ Exit Long (Take Profit): Price crossed SMA.");
+    if (zScore >= -Z_SCORE_EXIT_THRESHOLD) {
+      // Z-score moved up towards/past zero
+      console.log(
+        `  -> ✅ Exit Long (Take Profit): Z-Score (${zScore.toFixed(
+          4
+        )}) >= ${-Z_SCORE_EXIT_THRESHOLD}`
+      );
       try {
         await closePosition(driftClient, marketIndex);
       } catch (error) {
@@ -117,8 +129,13 @@ export async function runMeanReversionLogic(
     }
   } else if (positionSize < 0) {
     // Currently Short
-    if (currentPrice <= sma) {
-      console.log("  -> ✅ Exit Short (Take Profit): Price crossed SMA.");
+    if (zScore <= Z_SCORE_EXIT_THRESHOLD) {
+      // Z-score moved down towards/past zero
+      console.log(
+        `  -> ✅ Exit Short (Take Profit): Z-Score (${zScore.toFixed(
+          4
+        )}) <= ${Z_SCORE_EXIT_THRESHOLD}`
+      );
       try {
         await closePosition(driftClient, marketIndex);
       } catch (error) {
@@ -128,10 +145,14 @@ export async function runMeanReversionLogic(
     }
   }
 
-  // Entry condition: If no position, check if price crossed bands
+  // Entry condition: If no position, check if Z-score crossed entry threshold
   if (positionSize === 0) {
-    if (currentPrice < lowerBand) {
-      console.log("  -> 🔥 Entry Long Signal: Price below lower band.");
+    if (zScore < -Z_SCORE_ENTRY_THRESHOLD) {
+      console.log(
+        `  -> 🔥 Entry Long Signal: Z-Score (${zScore.toFixed(
+          4
+        )}) < ${-Z_SCORE_ENTRY_THRESHOLD}`
+      );
       try {
         await placeMarketOrder(
           driftClient,
@@ -142,8 +163,12 @@ export async function runMeanReversionLogic(
       } catch (error) {
         console.error("  -> ❌ Error placing long order:", error);
       }
-    } else if (currentPrice > upperBand) {
-      console.log("  -> 🔥 Entry Short Signal: Price above upper band.");
+    } else if (zScore > Z_SCORE_ENTRY_THRESHOLD) {
+      console.log(
+        `  -> 🔥 Entry Short Signal: Z-Score (${zScore.toFixed(
+          4
+        )}) > ${Z_SCORE_ENTRY_THRESHOLD}`
+      );
       try {
         await placeMarketOrder(
           driftClient,
@@ -158,4 +183,14 @@ export async function runMeanReversionLogic(
   }
 
   console.log("  -> Strategy check complete.");
+}
+
+// --- State Reset Function ---
+/**
+ * Resets the internal state of the mean reversion strategy (e.g., price queue).
+ */
+export function resetMeanReversionState() {
+  console.log(" -> Resetting mean reversion strategy state...");
+  priceQueue = [];
+  console.log(" -> Price queue cleared.");
 }

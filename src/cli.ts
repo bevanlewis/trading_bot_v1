@@ -15,6 +15,9 @@ import { testDriftConnection } from "./drift/connect";
 import { fetchSingleMarketInfo, fetchAccountAndPositions } from "./drift/data";
 import { runKeypairValidation } from "./utils/validateKeypair"; // Util doesn't need drift client
 
+// Import the new cancel function
+import { cancelAllPerpOrders } from "./drift/orders";
+
 // Import loop control functions
 import {
   startTradingLoop,
@@ -35,6 +38,7 @@ async function showMainMenu() {
       { name: "Test Drift Connection", value: "testDrift" },
       { name: "Fetch Single Market Info", value: "fetchMarketInfo" },
       { name: "View Account & Positions", value: "viewAccount" },
+      { name: "Cancel All Perp Orders", value: "cancelAll" },
       { name: "Run Utility Tests", value: "runUtils" },
       new Separator(),
       { name: "Exit", value: "exit" },
@@ -91,8 +95,8 @@ async function runCli() {
   let running = true;
   while (running) {
     const choice = await showMainMenu();
+    let pauseAfterAction = true; // Flag to control pausing
 
-    // Add try-catch around the actions to handle errors gracefully
     try {
       switch (choice) {
         case "start":
@@ -113,7 +117,9 @@ async function runCli() {
             });
             const marketIndex = parseInt(marketIndexInput, 10);
             console.log("\n--- Starting Bot ---");
-            startTradingLoop(driftClient, marketIndex); // Pass client and market index
+            startTradingLoop(driftClient, marketIndex);
+            pauseAfterAction = false; // Don't pause after starting the bot
+            console.log("\nBot loop started in background. Menu is active.");
           }
           break;
         case "stop":
@@ -122,6 +128,7 @@ async function runCli() {
           } else {
             console.log("\n--- Stopping Bot ---");
             stopTradingLoop();
+            // Keep pauseAfterAction = true here
           }
           break;
         case "testSolana":
@@ -159,6 +166,19 @@ async function runCli() {
           await fetchAccountAndPositions(driftClient);
           // Log separator is now inside fetchAccountAndPositions
           break;
+        case "cancelAll":
+          console.log("\n--- Cancelling All Perp Orders ---");
+          // Pass the initialized client
+          const cancelTx = await cancelAllPerpOrders(driftClient);
+          if (cancelTx) {
+            console.log("   Cancellation Request Sent. Tx:", cancelTx);
+          } else {
+            console.log(
+              "   No orders found to cancel or transaction not needed."
+            );
+          }
+          console.log("----------------------------------");
+          break;
         case "runUtils":
           console.log("\n--- Running Utility Tests (Keypair Validation) ---");
           const validationSuccess = await runKeypairValidation(); // No change, doesn't need drift client
@@ -177,10 +197,12 @@ async function runCli() {
             console.log("\nStopping bot loop before exiting...");
             stopTradingLoop();
           }
+          pauseAfterAction = false; // Don't pause before exiting
           running = false;
           break;
         default:
           console.log("Invalid choice.");
+          pauseAfterAction = false; // Don't pause on invalid choice
       }
     } catch (error) {
       // Catch errors from the awaited functions
@@ -193,13 +215,16 @@ async function runCli() {
         console.error("   An unknown error occurred:", error);
       }
       console.log("\nPlease check the output above for details.");
+      // Keep pauseAfterAction = true here to let user see error
     }
 
-    // Pause briefly before showing the menu again, unless exiting
-    if (running) {
-      // Use 'input' for the pause prompt
+    // Pause briefly before showing the menu again, based on the flag
+    if (running && pauseAfterAction) {
       await input({ message: "Press Enter to continue..." });
-      console.clear(); // Clear console before showing menu again
+    }
+    // Always clear console before next menu display if not exiting
+    if (running) {
+      console.clear();
     }
   }
 

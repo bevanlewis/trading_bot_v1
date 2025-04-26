@@ -231,6 +231,40 @@ export async function closePosition(
   }
 }
 
+/**
+ * Cancels ALL open perpetual orders for the user.
+ * @param driftClient Initialized and subscribed DriftClient.
+ * @returns The transaction signature, or null if no orders were cancelled.
+ */
+export async function cancelAllPerpOrders(
+  driftClient: DriftClient
+): Promise<string | null> {
+  console.log("Attempting to cancel all open perp orders...");
+
+  try {
+    // Pass MarketType.PERP and undefined for marketIndex to cancel all perp orders
+    const txSig = await driftClient.cancelOrders(MarketType.PERP, undefined);
+
+    if (txSig) {
+      console.log(`   Cancelled all perp orders, Tx Signature: ${txSig}`);
+      return txSig;
+    } else {
+      console.log("   No perp orders found to cancel or transaction not sent.");
+      return null;
+    }
+  } catch (e) {
+    console.error("❌ Failed to cancel all perp orders:", e);
+    if (
+      e instanceof Error &&
+      e.message.toLowerCase().includes("no orders found")
+    ) {
+      console.log("   No perp orders were found to cancel.");
+      return null;
+    }
+    throw e;
+  }
+}
+
 // Placeholder - will add functions here
 
 // --- Example Usage ---

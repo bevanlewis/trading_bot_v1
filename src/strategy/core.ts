@@ -1,5 +1,8 @@
 import { DriftClient } from "@drift-labs/sdk";
-import { runMeanReversionLogic } from "./meanReversion"; // Assuming logic lives here
+import {
+  runMeanReversionLogic,
+  resetMeanReversionState,
+} from "./meanReversion"; // Assuming logic lives here
 
 let isBotRunning = false;
 let loopTimeoutId: NodeJS.Timeout | null = null;
@@ -49,7 +52,7 @@ export function startTradingLoop(
 }
 
 /**
- * Stops the main trading bot loop.
+ * Stops the main trading bot loop and resets strategy state.
  */
 export function stopTradingLoop() {
   if (!isBotRunning) {
@@ -63,6 +66,10 @@ export function stopTradingLoop() {
     clearTimeout(loopTimeoutId);
     loopTimeoutId = null;
   }
+
+  // Reset the strategy state (e.g., clear price queue)
+  resetMeanReversionState();
+
   console.log("Trading loop stopped.");
 }
 
