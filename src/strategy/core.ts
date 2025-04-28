@@ -6,7 +6,7 @@ import {
 
 let isBotRunning = false;
 let loopTimeoutId: NodeJS.Timeout | null = null;
-const BOT_LOOP_INTERVAL_MS = 5000; // Run checks every 5 seconds (example)
+const BOT_LOOP_INTERVAL_MS = 6000; // Run checks every 6 seconds (example)
 
 /**
  * Starts the main trading bot loop.
